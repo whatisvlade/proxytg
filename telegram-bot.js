@@ -1341,7 +1341,7 @@ bot.on('callback_query', async (callbackQuery) => {
 
         const adminClients = getAdminClients(adminId);
         if (!adminClients[clientName]) {
-            await bot.editMessageText('❌ Клиент не найден', {
+await bot.editMessageText('❌ Клиент не найден', {
                 chat_id: chatId,
                 message_id: callbackQuery.message.message_id
             });
@@ -1349,67 +1349,13 @@ bot.on('callback_query', async (callbackQuery) => {
             return;
         }
 
-        const client = adminClients[clientName];
-        if (!client.proxies || client.proxies.length === 0) {
-            await bot.editMessageText(`❌ У клиента ${clientName} нет прокси для удаления`, {
-                chat_id: chatId,
-                message_id: callbackQuery.message.message_id
-            });
-            await bot.answerCallbackQuery(callbackQuery.id);
-            return;
-        }
-
-        // Удаляем последний прокси
-        const removedProxy = client.proxies.pop();
-        saveClients();
-
-        // Обновляем прокси на сервере
         try {
-            await makeProxyServerRequest('/api/remove-proxy', 'DELETE', {
-                clientName: clientName,
-                proxy: formatProxyForRailway(removedProxy)
-            });
-        } catch (error) {
-            console.error('❌ Ошибка удаления прокси на сервере:', error);
-            // Если прокси не найден на сервере (404), это не критическая ошибка
-            if (error.response && error.response.status === 404) {
-                console.log('ℹ️ Прокси уже отсутствует на сервере, продолжаем...');
-            }
-        }
-
-        await bot.editMessageText(
-            `✅ Прокси удален у клиента ${clientName}
-🗑️ Удаленный прокси: ${removedProxy.split(':')[0]}:${removedProxy.split(':')[1]}
-🌐 Осталось прокси: ${client.proxies.length}
-👨‍💼 Админ: ${adminId}`,
-            {
-                chat_id: chatId,
-                message_id: callbackQuery.message.message_id
-            }
-        );
-
-        await bot.answerCallbackQuery(callbackQuery.id);
-        return;
-    }
-
-    // Обработка ротации прокси
-    if (data.startsWith('rotate_')) {
-        const parts = data.split('_');
-        const clientName = parts[1];
-        const adminId = parts[2];
-
-        // Проверяем права доступа
-        if (!superAdmin && adminId != userId) {
-            await bot.answerCallbackQuery(callbackQuery.id, { text: '❌ Нет доступа к этому клиенту' });
-            return;
-        }
-
-        try {
-            const result = await rotateClientProxy(clientName);
+            const result = await getCurrentProxy(clientName, adminClients[clientName].password);
 
             await bot.editMessageText(
-                `🔄 Прокси для клиента ${clientName} успешно ротирован
-🌐 Новый прокси: ${result.newProxy || 'Скрыт'}
+                `🌐 Текущий прокси для клиента ${clientName}:
+📍 ${result.proxy || 'Не найден'}
+🌍 Страна: ${result.country || 'Неизвестно'}
 👨‍💼 Админ: ${adminId}`,
                 {
                     chat_id: chatId,
@@ -1418,7 +1364,7 @@ bot.on('callback_query', async (callbackQuery) => {
             );
         } catch (error) {
             await bot.editMessageText(
-                `❌ Ошибка ротации прокси для ${clientName}: ${error.message}`,
+                `❌ Ошибка получения прокси для ${clientName}: ${error.message}`,
                 {
                     chat_id: chatId,
                     message_id: callbackQuery.message.message_id
@@ -1430,8 +1376,8 @@ bot.on('callback_query', async (callbackQuery) => {
         return;
     }
 
-    // Обработка проверки текущего прокси
-    if (data.startsWith('current_')) {
+    // Обработка проверки IP
+    if (data.startsWith('myip_')) {
         const parts = data.split('_');
         const clientName = parts[1];
         const adminId = parts[2];
@@ -1445,4 +1391,107 @@ bot.on('callback_query', async (callbackQuery) => {
         const adminClients = getAdminClients(adminId);
         if (!adminClients[clientName]) {
             await bot.editMessageText('❌ Клиент не найден', {
-                chat_
+                chat_id: chatId,
+                message_id: callbackQuery.message.message_id
+            });
+            await bot.answerCallbackQuery(callbackQuery.id);
+            return;
+        }
+
+        try {
+            const result = await getMyIP(clientName, adminClients[clientName].password);
+
+            await bot.editMessageText(
+                `🌍 IP адрес клиента ${clientName}:
+📍 ${result.ip || 'Не определен'}
+🌍 Страна: ${result.country || 'Неизвестно'}
+🏙️ Город: ${result.city || 'Неизвестно'}
+👨‍💼 Админ: ${adminId}`,
+                {
+                    chat_id: chatId,
+                    message_id: callbackQuery.message.message_id
+                }
+            );
+        } catch (error) {
+            await bot.editMessageText(
+                `❌ Ошибка получения IP для ${clientName}: ${error.message}`,
+                {
+                    chat_id: chatId,
+                    message_id: callbackQuery.message.message_id
+                }
+            );
+        }
+
+        await bot.answerCallbackQuery(callbackQuery.id);
+        return;
+    }
+
+    await bot.answerCallbackQuery(callbackQuery.id);
+});
+
+// Инициализация
+loadClients();
+loadAdmins();
+
+console.log('🚀 Telegram Bot запущен!');
+console.log(`👑 Супер-админ ID: ${SUPER_ADMIN_ID}`);
+console.log(`👥 Админов: ${admins.length}`);
+console.log(`🛒 PROXY6.net API: ${PROXY6_CONFIG.API_KEY ? '✅ Настроен' : '❌ Не настроен'}`);
+console.log(`🌐 Прокси сервер: ${PROXY_SERVER_URL}`);
+
+// Необязательный health endpoint (если нужен для хостинга)
+const express = require('express');
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+app.get('/health', (req, res) => {
+    const totalClients = Object.values(clients).reduce((sum, adminClients) => sum + Object.keys(adminClients).length, 0);
+
+    res.json({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        total_clients: totalClients,
+        admins_count: admins.length,
+        proxy6_configured: !!PROXY6_CONFIG.API_KEY,
+        proxy_server: PROXY_SERVER_URL,
+        clients_by_admin: Object.fromEntries(
+            Object.entries(clients).map(([adminId, adminClients]) => [
+                adminId, Object.keys(adminClients).length
+            ])
+        )
+    });
+});
+
+app.listen(PORT, () => {
+    console.log(`🌐 Health endpoint доступен на порту ${PORT}`);
+});
+
+// Функция для проверки и форматирования прокси
+function formatProxyForRailway(proxy) {
+    // PROXY6.net возвращает: { host, port, user, pass, type }
+    // Сервер ожидает: "http://user:pass@host:port"
+
+    if (typeof proxy === 'string') {
+        // Если уже в формате http://user:pass@host:port
+        if (proxy.startsWith('http://') && proxy.includes('@')) {
+            return proxy;
+        }
+
+        // Если в формате host:port:user:pass - конвертируем
+        const parts = proxy.split(':');
+        if (parts.length === 4) {
+            const [host, port, user, pass] = parts;
+            return `http://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${host}:${port}`;
+        }
+
+        return proxy; // Возвращаем как есть
+    }
+
+    // Если объект от PROXY6.net
+    if (proxy && proxy.host && proxy.port && proxy.user && proxy.pass) {
+        return `http://${encodeURIComponent(proxy.user)}:${encodeURIComponent(proxy.pass)}@${proxy.host}:${proxy.port}`;
+    }
+
+    console.error('❌ Неверный формат прокси:', proxy);
+    return null;
+}
