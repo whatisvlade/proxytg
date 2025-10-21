@@ -8,6 +8,12 @@ const BOT_TOKEN = process.env.BOT_TOKEN;
 const SUPER_ADMIN_ID = parseInt(process.env.SUPER_ADMIN_ID);
 const PROXY_SERVER_URL = process.env.PROXY_SERVER_URL || 'https://proxyserver-production-0cdc.up.railway.app';
 
+// Конфигурация PROXY6
+const PROXY6_CONFIG = {
+    API_KEY: process.env.PROXY6_API_KEY,
+    BASE_URL: 'https://proxy6.net/api'
+};
+
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 
 // Файлы конфигурации
@@ -65,7 +71,8 @@ const superAdminKeyboard = {
                 { text: '🔄 Синхронизация' }
             ],
             [
-                { text: '👥 Управление админами' }
+                { text: '👥 Управление админами' },
+                { text: '💰 Проверка баланса' }
             ]
         ],
         resize_keyboard: true,
@@ -1118,3 +1125,30 @@ function formatProxyForRailway(proxy) {
     console.error('❌ Неверный формат прокси:', proxy);
     return null;
 }
+
+
+вот из другого кода 
+       await bot.sendMessage(chatId, message);
+        return;
+    }
+
+    if (text === '💰 Баланс PROXY6' || text === '/proxy6-balance') {
+        console.log(`💰 Команда /proxy6-balance от userId=${userId}`);
+
+        if (!PROXY6_CONFIG.API_KEY) {
+            await bot.sendMessage(chatId, '❌ API ключ PROXY6.net не настроен');
+            return;
+        }
+
+        const balanceResult = await checkProxy6Balance();
+
+        if (balanceResult.success) {
+            const message = `💰 Баланс PROXY6.net:
+💵 ${balanceResult.balance} ${balanceResult.currency}
+👤 ID аккаунта: ${balanceResult.user_id}`;
+            await bot.sendMessage(chatId, message);
+        } else {
+            await bot.sendMessage(chatId, `❌ Ошибка получения баланса: ${balanceResult.error}`);
+        }
+        return;
+    }
