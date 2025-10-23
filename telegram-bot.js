@@ -6,7 +6,7 @@ const path = require('path');
 // Конфигурация
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const SUPER_ADMIN_ID = parseInt(process.env.SUPER_ADMIN_ID);
-const PROXY_SERVER_URL = process.env.PROXY_SERVER_URL || 'https://proxyserver-production-0cdc.up.railway.app';
+const PROXY_SERVER_URL = process.env.PROXY_SERVER_URL || 'https://railway-proxy-server-production-58a1.up.railway.app';
 
 // Конфигурация PROXY6
 const PROXY6_CONFIG = {
