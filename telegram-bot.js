@@ -3,6 +3,26 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 
+// ---------- ЛОГГЕР ----------
+const LOG_LEVEL = (process.env.LOG_LEVEL || 'info').toLowerCase(); // error|warn|info|debug
+const levels = { error: 0, warn: 1, info: 2, debug: 3 };
+const canLog = (lvl) => (levels[lvl] ?? 2) <= (levels[LOG_LEVEL] ?? 2);
+const log = {
+  error: (...a) => canLog('error') && console.error(...a),
+  warn:  (...a) => canLog('warn')  && console.warn(...a),
+  info:  (...a) => canLog('info')  && console.log(...a),
+  debug: (...a) => canLog('debug') && console.log(...a),
+};
+const MAX_BODY_LOG = parseInt(process.env.MAX_BODY_LOG || '500', 10); // 0 — не логировать тела
+const safeJson = (obj) => {
+  try {
+    const s = JSON.stringify(obj);
+    if (MAX_BODY_LOG <= 0) return '[hidden]';
+    if (s.length > MAX_BODY_LOG) return s.slice(0, MAX_BODY_LOG) + '…(truncated)';
+    return s;
+  } catch { return '[unserializable]'; }
+};
+
 // Конфигурация
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const SUPER_ADMIN_ID = parseInt(process.env.SUPER_ADMIN_ID);
@@ -16,7 +36,7 @@ const PROXY6_CONFIG = {
 
 // Единые настройки покупки прокси (по умолчанию: 20 штук на 7 дней, RU, IPv4 shared)
 const PURCHASE_DEFAULTS = {
-    count: parseInt(process.env.PROXY_BUY_COUNT || '20', 10), // было '1' -> '20'
+    count: parseInt(process.env.PROXY_BUY_COUNT || '1', 10),
     period: parseInt(process.env.PROXY_BUY_PERIOD || '7', 10),
     country: process.env.PROXY_BUY_COUNTRY || 'ru',
     version: parseInt(process.env.PROXY_BUY_VERSION || '3', 10)
@@ -118,7 +138,7 @@ async function checkProxy6Balance() {
             return { success: false, error: response.data.error || 'Неизвестная ошибка' };
         }
     } catch (error) {
-        console.error('Ошибка при проверке баланса PROXY6:', error);
+        log.error('Ошибка при проверке баланса PROXY6:', error.message);
         return { success: false, error: 'Ошибка соединения с PROXY6' };
     }
 }
@@ -145,7 +165,7 @@ async function getProxy6Price(count = PURCHASE_DEFAULTS.count, period = PURCHASE
             return { success: false, error: response.data.error || 'Ошибка получения цены' };
         }
     } catch (error) {
-        console.error('Ошибка при получении цены PROXY6:', error);
+        log.error('Ошибка при получении цены PROXY6:', error.message);
         return { success: false, error: 'Ошибка соединения с PROXY6' };
     }
 }
@@ -178,7 +198,7 @@ async function buyProxy6(count = PURCHASE_DEFAULTS.count, period = PURCHASE_DEFA
             };
         }
     } catch (error) {
-        console.error('Ошибка при покупке прокси PROXY6:', error);
+        log.error('Ошибка при покупке прокси PROXY6:', error.message);
         return { success: false, error: 'Ошибка соединения с PROXY6' };
     }
 }
@@ -201,16 +221,16 @@ function loadClients() {
             clients = JSON.parse(data);
         }
     } catch (error) {
-        console.error('❌ Ошибка загрузки клиентов:', error);
+        log.error('❌ Ошибка загрузки клиентов:', error.message);
         clients = {};
     }
 }
 function saveClients() {
     try {
         fs.writeFileSync(CLIENTS_FILE, JSON.stringify(clients, null, 2));
-        console.log('💾 Конфигурация клиентов сохранена');
+        log.debug('💾 Конфигурация клиентов сохранена');
     } catch (error) {
-        console.error('❌ Ошибка сохранения клиентов:', error);
+        log.error('❌ Ошибка сохранения клиентов:', error.message);
     }
 }
 function loadAdmins() {
@@ -220,16 +240,16 @@ function loadAdmins() {
             admins = JSON.parse(data);
         }
     } catch (error) {
-        console.error('❌ Ошибка загрузки админов:', error);
+        log.error('❌ Ошибка загрузки админов:', error.message);
         admins = [];
     }
 }
 function saveAdmins() {
     try {
         fs.writeFileSync(ADMINS_FILE, JSON.stringify(admins, null, 2));
-        console.log('💾 Конфигурация админов сохранена');
+        log.debug('💾 Конфигурация админов сохранена');
     } catch (error) {
-        console.error('❌ Ошибка сохранения админов:', error);
+        log.error('❌ Ошибка сохранения админов:', error.message);
     }
 }
 function getAdminClients(adminId) {
@@ -277,15 +297,16 @@ async function makeProxyServerRequest(endpoint, method = 'GET', data = null, aut
         if (auth) config.auth = auth;
         if (data && method !== 'GET') config.data = data;
 
-        console.log(`🌐 Запрос к прокси серверу: ${method} ${config.url}`);
-        if (data) console.log('📤 Данные:', data);
+        log.debug(`HTTP ${method} ${config.url}`);
+        if (data) log.debug('HTTP body:', safeJson(data));
 
         const response = await axios(config);
-        console.log('✅ Успешный ответ сервера');
         return response.data;
     } catch (error) {
-        console.error('❌ Ошибка запроса к прокси серверу:', error.message);
-        if (error.response) console.error('📥 Ответ с ошибкой:', error.response.data);
+        const status = error?.response?.status;
+        const body = error?.response?.data;
+        log.warn(`HTTP ${method} ${PROXY_SERVER_URL}${endpoint} failed: ${status || error.message}`);
+        if (status) log.debug('HTTP error body:', safeJson(body));
         throw error;
     }
 }
@@ -295,41 +316,40 @@ async function addProxiesToServer(clientName, proxies) {
     let ok = 0, fail = 0, errors = [];
     for (const proxy of proxies) {
         try {
-            console.log('🌐 POST /api/add-proxy ->', { clientName, proxy });
             await makeProxyServerRequest('/api/add-proxy', 'POST', { clientName, proxy });
             ok++;
         } catch (e) {
             // Fallback на старый формат, если вдруг доступен
             try {
-                console.log('↩️ Fallback POST /api/add-proxy ->', { name: clientName, proxies: [proxy] });
                 await makeProxyServerRequest('/api/add-proxy', 'POST', { name: clientName, proxies: [proxy] });
                 ok++;
             } catch (e2) {
                 fail++;
-                const msg = e?.response?.data ? JSON.stringify(e.response.data) : e.message;
-                console.error(`❌ add-proxy failed for ${clientName}`, msg);
+                const msg = e2?.response?.data ? safeJson(e2.response.data) : e2.message;
+                log.warn(`add-proxy failed for ${clientName}: ${msg}`);
                 errors.push(msg);
             }
         }
     }
+    log.info(`addProxiesToServer(${clientName}): added=${ok}, failed=${fail}`);
     return { ok, fail, errors };
 }
 
 async function deleteClientFromServer(clientName) {
     try {
-        console.log(`🌐 DELETE ${PROXY_SERVER_URL}/api/delete-client/${clientName}`);
+        log.debug(`HTTP DELETE ${PROXY_SERVER_URL}/api/delete-client/${clientName}`);
         const response = await axios.delete(`${PROXY_SERVER_URL}/api/delete-client/${clientName}`, {
             timeout: 10000,
             headers: { 'Accept': 'application/json' }
         });
-        console.log('✅ Клиент успешно удален с сервера');
+        log.info(`Клиент ${clientName} удален с сервера`);
         return { success: true, data: response.data };
     } catch (error) {
-        console.error('❌ Ошибка удаления клиента с сервера:', error.message);
         if (error.response && error.response.status === 404) {
-            console.log('ℹ️ Клиент уже отсутствует на сервере');
+            log.info(`Клиент ${clientName} уже отсутствует на сервере`);
             return { success: true, data: { message: 'Client not found on server' } };
         }
+        log.error('❌ Ошибка удаления клиента с сервера:', error.message);
         return { success: false, error: error.message };
     }
 }
@@ -356,28 +376,28 @@ async function syncAllClientsToServer(adminId = null) {
     for (const [aId, adminClients] of Object.entries(toSync)) {
         for (const [clientName, clientData] of Object.entries(adminClients)) {
             try {
-                console.log(`🔄 Синхронизация клиента ${clientName} (Admin: ${aId})`);
+                log.debug(`🔄 Синхронизация клиента ${clientName} (Admin: ${aId})`);
                 try {
                     await makeProxyServerRequest('/api/add-client', 'POST', {
                         clientName,
                         password: clientData.password,
                         proxies: (clientData.proxies || []).map(formatProxyForRailway).filter(Boolean)
                     });
-                    console.log(`✅ Клиент ${clientName} создан/обновлен через add-client`);
+                    log.debug(`✅ Клиент ${clientName} создан/обновлен через add-client`);
                     results.success++;
                 } catch (err) {
                     const status = err?.response?.status;
                     if (status === 409) {
-                        console.log(`ℹ️ Клиент ${clientName} уже существует (409). Актуализирую прокси через add-proxy...`);
+                        log.debug(`ℹ️ Клиент ${clientName} уже существует (409). Досылаю прокси через add-proxy...`);
                         try {
                             const proxies = (clientData.proxies || []).map(formatProxyForRailway).filter(Boolean);
                             if (proxies.length > 0) {
                                 const res = await addProxiesToServer(clientName, proxies);
-                                console.log(`✅ Клиент ${clientName} синхронизирован через add-proxy: added=${res.ok}, failed=${res.fail}`);
+                                log.info(`Синхронизирован ${clientName} через add-proxy: added=${res.ok}, failed=${res.fail}`);
                             }
                             results.success++;
                         } catch (addProxyErr) {
-                            console.error(`❌ Ошибка add-proxy для ${clientName}:`, addProxyErr.message);
+                            log.error(`❌ Ошибка add-proxy для ${clientName}:`, addProxyErr.message);
                             results.failed++;
                             results.errors.push(`${clientName}: add-proxy failed: ${addProxyErr.message}`);
                         }
@@ -386,7 +406,7 @@ async function syncAllClientsToServer(adminId = null) {
                     }
                 }
             } catch (error) {
-                console.error(`❌ Ошибка синхронизации клиента ${clientName}:`, error.message);
+                log.error(`❌ Ошибка синхронизации клиента ${clientName}:`, error.message);
                 results.failed++;
                 results.errors.push(`${clientName}: ${error.message}`);
             }
@@ -459,7 +479,7 @@ async function handleAddUserWithPurchase(chatId, userId) {
         );
 
     } catch (error) {
-        console.error('Ошибка в handleAddUserWithPurchase:', error);
+        log.error('Ошибка в handleAddUserWithPurchase:', error.message);
         await bot.sendMessage(chatId, '❌ Произошла ошибка при подготовке к покупке прокси.');
     }
 }
@@ -508,7 +528,7 @@ async function createUserWithProxyPurchase(userData) {
             partialNote
         };
     } catch (error) {
-        console.error('Ошибка при создании пользователя с покупкой прокси:', error);
+        log.error('Ошибка при создании пользователя с покупкой прокси:', error.message);
         return { success: false, error: 'Ошибка создания пользователя' };
     }
 }
@@ -539,9 +559,9 @@ async function buyProxiesForExistingClient({ adminId, clientName, count = PURCHA
         try {
             const mapped = formattedProxies.map(formatProxyForRailway).filter(Boolean);
             const res = await addProxiesToServer(clientName, mapped);
-            console.log(`✅ add-proxy: added=${res.ok}, failed=${res.fail}`);
+            log.info(`add-proxy summary for ${clientName}: added=${res.ok}, failed=${res.fail}`);
         } catch (err) {
-            console.error('❌ Ошибка добавления купленных прокси на сервер:', err.message);
+            log.error('❌ Ошибка добавления купленных прокси на сервер:', err.message);
         }
 
         const partialNote = formattedProxies.length < count
@@ -564,7 +584,7 @@ async function buyProxiesForExistingClient({ adminId, clientName, count = PURCHA
             }
         };
     } catch (error) {
-        console.error('Ошибка в buyProxiesForExistingClient:', error);
+        log.error('Ошибка в buyProxiesForExistingClient:', error.message);
         return { success: false, error: 'Внутренняя ошибка при покупке прокси' };
     }
 }
@@ -598,9 +618,9 @@ async function handleConfirmPurchase(chatId, userId) {
                     password: result.user.password,
                     proxies: result.user.proxies.map(formatProxyForRailway).filter(Boolean)
                 });
-                console.log(`✅ Клиент ${result.username} успешно добавлен на прокси сервер`);
+                log.info(`Клиент ${result.username} добавлен на прокси сервер`);
             } catch (error) {
-                console.error('❌ Ошибка добавления клиента на прокси сервер:', error);
+                log.error('❌ Ошибка добавления клиента на прокси сервер:', error.message);
             }
 
             await bot.sendMessage(
@@ -622,7 +642,7 @@ async function handleConfirmPurchase(chatId, userId) {
             await bot.sendMessage(chatId, `❌ Ошибка создания клиента: ${result.error}`, getKeyboardForUser(userId));
         }
     } catch (error) {
-        console.error('Ошибка в handleConfirmPurchase:', error);
+        log.error('Ошибка в handleConfirmPurchase:', error.message);
         await bot.sendMessage(chatId, '❌ Произошла ошибка при создании клиента.', getKeyboardForUser(userId));
     } finally {
         delete userStates[userId];
@@ -660,14 +680,14 @@ bot.on('message', async (msg) => {
 
     // Добавить клиента с покупкой
     if (text === '🛒 Добавить с покупкой' || text === '/addclientwithpurchase') {
-        console.log(`🛒 Команда добавления клиента с покупкой от userId=${userId}`);
+        log.debug(`🛒 Команда добавления клиента с покупкой от userId=${userId}`);
         await handleAddUserWithPurchase(chatId, userId);
         return;
     }
 
     // Купить прокси существующему клиенту
     if (text === '🛍 Купить прокси клиенту' || text === '/buy-proxy') {
-        console.log(`🛍 Команда покупки прокси для клиента от userId=${userId}`);
+        log.debug(`🛍 Команда покупки прокси для клиента от userId=${userId}`);
 
         const adminClients = superAdmin ? getAllClients() : getAdminClients(userId);
         const clientNames = Object.keys(adminClients);
@@ -758,6 +778,8 @@ bot.on('message', async (msg) => {
         await bot.sendMessage(chatId, '🔄 Начинаю синхронизацию клиентов с сервером...');
         try {
             const results = await syncAllClientsToServer(superAdmin ? null : userId);
+            log.info(`Sync finished: ok=${results.success} fail=${results.failed}`);
+
             let message = `✅ Синхронизация завершена!
 
 📊 Результаты:
@@ -943,7 +965,7 @@ bot.on('message', async (msg) => {
     if (buttonCommands.includes(text)) {
         if (userStates[userId]) {
             delete userStates[userId];
-            console.log(`🔄 Состояние пользователя ${userId} сброшено из-за нажатия кнопки: ${text}`);
+            log.debug(`🔄 Состояние пользователя ${userId} сброшено из-за нажатия кнопки: ${text}`);
         }
         await bot.sendMessage(chatId, `❌ Команда "${text}" не реализована или уже обработана выше. Используйте кнопки меню.`, getKeyboardForUser(userId));
         return;
@@ -1288,7 +1310,7 @@ bot.on('message', async (msg) => {
                     newProxies.map(formatProxyForRailway).filter(Boolean)
                 );
             } catch (error) {
-                console.error('❌ Ошибка добавления прокси на сервер:', error);
+                log.error('❌ Ошибка добавления прокси на сервер:', error.message);
             }
 
             await bot.sendMessage(
@@ -1469,7 +1491,7 @@ bot.on('callback_query', async (callbackQuery) => {
         try {
             await deleteClientFromServer(clientName);
         } catch (error) {
-            console.error('❌ Ошибка удаления клиента с сервера:', error);
+            log.error('❌ Ошибка удаления клиента с сервера:', error.message);
         }
 
         delete adminClients[clientName];
@@ -1575,12 +1597,8 @@ bot.on('callback_query', async (callbackQuery) => {
 loadClients();
 loadAdmins();
 
-console.log('🚀 Telegram Bot запущен!');
-console.log(`👑 Супер-админ ID: ${SUPER_ADMIN_ID}`);
-console.log(`👥 Админов: ${admins.length}`);
-console.log(`🌐 Прокси сервер: ${PROXY_SERVER_URL}`);
-console.log(`🔑 PROXY6 API: ${PROXY6_CONFIG.API_KEY ? 'Настроен' : 'НЕ настроен'}`);
-console.log(`🛒 Покупка по умолчанию: ${PURCHASE_DEFAULTS.count} шт. на ${PURCHASE_DEFAULTS.period} дней (${PURCHASE_DEFAULTS.country}, ver=${PURCHASE_DEFAULTS.version})`);
+log.info(`🚀 Bot started | ProxyServer=${PROXY_SERVER_URL} | Proxy6=${PROXY6_CONFIG.API_KEY ? 'on' : 'off'} | Defaults: count=${PURCHASE_DEFAULTS.count}, period=${PURCHASE_DEFAULTS.period}, country=${PURCHASE_DEFAULTS.country}, ver=${PURCHASE_DEFAULTS.version}`);
+log.debug(`👑 Супер-админ ID: ${SUPER_ADMIN_ID} | 👥 Админов: ${admins.length}`);
 
 // Health endpoint
 const express = require('express');
@@ -1604,7 +1622,7 @@ app.get('/health', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`🌐 Health endpoint доступен на порту ${PORT}`);
+    log.info(`🌐 Health endpoint на порту ${PORT}`);
 });
 
 // Форматирование прокси к виду http://user:pass@host:port
@@ -1621,6 +1639,6 @@ function formatProxyForRailway(proxy) {
     if (proxy && proxy.host && proxy.port && proxy.user && proxy.pass) {
         return `http://${encodeURIComponent(proxy.user)}:${encodeURIComponent(proxy.pass)}@${proxy.host}:${proxy.port}`;
     }
-    console.error('❌ Неверный формат прокси:', proxy);
+    log.error('❌ Неверный формат прокси:', proxy);
     return null;
 }
