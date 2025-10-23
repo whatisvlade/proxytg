@@ -262,81 +262,6 @@ async function buyProxy6Proxies(count, period, country = 'ru', version = 3, desc
     }
 }
 
-async function purchaseProxiesForExistingClient({
-    adminId,
-    clientName,
-    count = PROXY6_CONFIG.DEFAULT_COUNT,
-    period = PROXY6_CONFIG.DEFAULT_PERIOD,
-    country = PROXY6_CONFIG.DEFAULT_COUNTRY,
-    version = PROXY6_CONFIG.DEFAULT_VERSION,
-    descrSuffix = 'manual'
-}) {
-    if (!PROXY6_CONFIG.API_KEY) {
-        return { success: false, error: 'API ключ PROXY6.net не настроен' };
-    }
-
-    const adminClients = getAdminClients(adminId);
-    const client = adminClients[clientName];
-
-    if (!client) {
-        return { success: false, error: `Клиент ${clientName} не найден у админа ${adminId}` };
-    }
-
-    try {
-        const purchaseResult = await buyProxy6Proxies(
-            count,
-            period,
-            country,
-            version,
-            `client_${clientName}_admin_${adminId}_${descrSuffix}`
-        );
-
-        if (!purchaseResult.success) {
-            return { success: false, error: purchaseResult.error || 'Ошибка покупки прокси' };
-        }
-
-        const newProxies = Object.values(purchaseResult.proxies || {}).map(
-            proxy => `${proxy.host}:${proxy.port}:${proxy.user}:${proxy.pass}`
-        );
-
-        if (!Array.isArray(client.proxies)) {
-            client.proxies = [];
-        }
-
-        client.proxies.push(...newProxies);
-        saveClients();
-
-        let serverSyncError = null;
-        const formattedProxies = newProxies.map(formatProxyForRailway).filter(Boolean);
-
-        if (formattedProxies.length > 0) {
-            try {
-                await makeProxyServerRequest('/api/add-proxy', 'POST', {
-                    name: clientName,
-                    proxies: formattedProxies
-                });
-            } catch (error) {
-                console.error('❌ Ошибка обновления прокси на сервере:', error);
-                serverSyncError = error.message;
-            }
-        }
-
-        return {
-            success: true,
-            details: {
-                order_id: purchaseResult.order_id,
-                count: purchaseResult.count,
-                price: purchaseResult.price,
-                added: newProxies.length,
-                total: client.proxies.length
-            },
-            serverSyncError
-        };
-    } catch (error) {
-        return { success: false, error: error.message };
-    }
-}
-
 // Функции работы с прокси сервером
 async function makeProxyServerRequest(endpoint, method = 'GET', data = null, auth = null) {
     try {
@@ -497,7 +422,6 @@ bot.on('message', async (msg) => {
 
 Например: \`user123 pass456\`
 
-ℹ️ Автоматически будет куплено ${PROXY6_CONFIG.DEFAULT_COUNT} российских прокси на ${PROXY6_CONFIG.DEFAULT_PERIOD} дней
 👤 Клиент будет добавлен в вашу группу`, { parse_mode: 'Markdown' });
         return;
     }
@@ -612,118 +536,6 @@ bot.on('message', async (msg) => {
         };
 
         await bot.sendMessage(chatId, '🛒 Выберите клиента для покупки прокси:', keyboard);
-        return;
-    }
-
-    if (text.startsWith('/buyproxy')) {
-        console.log(`🛒 Ручная покупка прокси через команду от userId=${userId}: ${text}`);
-
-        if (!PROXY6_CONFIG.API_KEY) {
-            await bot.sendMessage(chatId, '❌ API ключ PROXY6.net не настроен', getKeyboardForUser(userId));
-            return;
-        }
-
-        const args = text.trim().split(/\s+/).slice(1);
-
-        if (args.length === 0) {
-            await bot.sendMessage(
-                chatId,
-                'ℹ️ Использование: /buyproxy <имя_клиента[@adminId]> [количество] [период]\nНапример: /buyproxy client1 10 7 или /buyproxy client1@123456 10 30',
-                getKeyboardForUser(userId)
-            );
-            return;
-        }
-
-        let target = args.shift();
-        let clientName = target;
-        let targetAdminId = superAdmin ? null : userId;
-
-        if (superAdmin) {
-            const explicitAdminMatch = target.match(/^(.+?)@(\d+)$/);
-            if (explicitAdminMatch) {
-                clientName = explicitAdminMatch[1];
-                targetAdminId = explicitAdminMatch[2];
-            }
-        }
-
-        let count = PROXY6_CONFIG.DEFAULT_COUNT;
-        let period = PROXY6_CONFIG.DEFAULT_PERIOD;
-
-        if (args.length > 0 && /^\d+$/.test(args[0])) {
-            count = parseInt(args.shift(), 10);
-        }
-        if (args.length > 0 && /^\d+$/.test(args[0])) {
-            period = parseInt(args.shift(), 10);
-        }
-
-        if (count <= 0 || period <= 0) {
-            await bot.sendMessage(chatId, '❌ Количество и период должны быть положительными числами', getKeyboardForUser(userId));
-            return;
-        }
-
-        if (superAdmin && !targetAdminId) {
-            const matchingAdmins = Object.entries(clients)
-                .filter(([aId, adminClients]) => !!adminClients[clientName])
-                .map(([aId]) => aId);
-
-            if (matchingAdmins.length > 1) {
-                await bot.sendMessage(
-                    chatId,
-                    `⚠️ Найдено несколько клиентов с именем ${clientName}. Уточните админа: /buyproxy ${clientName}@ADMIN_ID ${count} ${period}`,
-                    getKeyboardForUser(userId)
-                );
-                return;
-            }
-
-            if (matchingAdmins.length === 1) {
-                targetAdminId = matchingAdmins[0];
-            }
-        }
-
-        const clientInfo = superAdmin
-            ? findClientByName(clientName, targetAdminId)
-            : findClientByName(clientName, userId);
-
-        if (!clientInfo) {
-            await bot.sendMessage(chatId, `❌ Клиент ${clientName} не найден или у вас нет к нему доступа`, getKeyboardForUser(userId));
-            return;
-        }
-
-        if (!superAdmin && clientInfo.adminId != userId) {
-            await bot.sendMessage(chatId, `❌ У вас нет доступа к клиенту ${clientName}`, getKeyboardForUser(userId));
-            return;
-        }
-
-        try {
-            const result = await purchaseProxiesForExistingClient({
-                adminId: clientInfo.adminId,
-                clientName: clientInfo.clientName,
-                count,
-                period,
-                descrSuffix: 'manual_command'
-            });
-
-            if (result.success) {
-                let responseText = `✅ Успешно куплено ${result.details.count} прокси для клиента ${clientInfo.clientName}
-💰 Стоимость: ${result.details.price} RUB
-📦 Заказ: #${result.details.order_id}
-🌐 Добавлено прокси: ${result.details.added}
-🌐 Всего прокси у клиента: ${result.details.total}
-👨‍💼 Админ: ${clientInfo.adminId}`;
-
-                if (result.serverSyncError) {
-                    responseText += `\n⚠️ Ошибка синхронизации с прокси сервером: ${result.serverSyncError}`;
-                }
-
-                await bot.sendMessage(chatId, responseText, getKeyboardForUser(userId));
-            } else {
-                await bot.sendMessage(chatId, `❌ Ошибка покупки прокси: ${result.error}`, getKeyboardForUser(userId));
-            }
-        } catch (error) {
-            console.error('❌ Ошибка ручной покупки прокси:', error);
-            await bot.sendMessage(chatId, `❌ Ошибка: ${error.message}`, getKeyboardForUser(userId));
-        }
-
         return;
     }
 
@@ -979,7 +791,7 @@ bot.on('message', async (msg) => {
 
             // Автоматическая покупка прокси через PROXY6.net
             let proxyPurchaseMessage = '';
-            if (PROXY6_CONFIG.API_KEY) {
+            if (false) {
                 console.log(`🛒 Автоматическая покупка прокси включена для клиента ${clientName}`);
 
                 try {
@@ -1262,26 +1074,40 @@ bot.on('callback_query', async (callbackQuery) => {
         }
 
         try {
-            const result = await purchaseProxiesForExistingClient({
-                adminId,
-                clientName,
-                descrSuffix: 'manual_button'
-            });
+            const purchaseResult = await buyProxy6Proxies(
+                PROXY6_CONFIG.DEFAULT_COUNT,
+                PROXY6_CONFIG.DEFAULT_PERIOD,
+                PROXY6_CONFIG.DEFAULT_COUNTRY,
+                PROXY6_CONFIG.DEFAULT_VERSION,
+                `client_${clientName}_admin_${adminId}_manual`
+            );
 
-            if (result.success) {
-                let messageText = `✅ Успешно куплено ${result.details.count} прокси для клиента ${clientName}
-💰 Стоимость: ${result.details.price} RUB
-📦 Заказ: #${result.details.order_id}
-🌐 Добавлено прокси: ${result.details.added}
-🌐 Всего прокси у клиента: ${result.details.total}
-👨‍💼 Админ: ${adminId}`;
+            if (purchaseResult.success) {
+                // Добавляем новые прокси к существующим
+                const newProxies = [];
+                for (const [id, proxy] of Object.entries(purchaseResult.proxies)) {
+                    newProxies.push(`${proxy.host}:${proxy.port}:${proxy.user}:${proxy.pass}`);
+                }
 
-                if (result.serverSyncError) {
-                    messageText += `\n⚠️ Ошибка синхронизации с прокси сервером: ${result.serverSyncError}`;
+                adminClients[clientName].proxies.push(...newProxies);
+                saveClients();
+
+                // Обновляем прокси на сервере
+                try {
+                    await makeProxyServerRequest('/api/add-proxy', 'POST', {
+                        name: clientName,
+                        proxies: newProxies.map(formatProxyForRailway)
+                    });
+                } catch (error) {
+                    console.error('❌ Ошибка обновления прокси на сервере:', error);
                 }
 
                 await bot.editMessageText(
-                    messageText,
+                    `✅ Успешно куплено ${purchaseResult.count} прокси для клиента ${clientName}
+💰 Стоимость: ${purchaseResult.price} RUB
+📦 Заказ: #${purchaseResult.order_id}
+🌐 Всего прокси у клиента: ${adminClients[clientName].proxies.length}
+👨‍💼 Админ: ${adminId}`,
                     {
                         chat_id: chatId,
                         message_id: callbackQuery.message.message_id
@@ -1289,7 +1115,7 @@ bot.on('callback_query', async (callbackQuery) => {
                 );
             } else {
                 await bot.editMessageText(
-                    `❌ Ошибка покупки прокси: ${result.error}`,
+                    `❌ Ошибка покупки прокси: ${purchaseResult.error}`,
                     {
                         chat_id: chatId,
                         message_id: callbackQuery.message.message_id
