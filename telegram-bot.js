@@ -6,7 +6,7 @@ const path = require('path');
 // Конфигурация
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const SUPER_ADMIN_ID = parseInt(process.env.SUPER_ADMIN_ID);
-const PROXY_SERVER_URL = process.env.PROXY_SERVER_URL || 'https://proxyserver-production-0cdc.up.railway.app';
+const PROXY_SERVER_URL = process.env.PROXY_SERVER_URL || 'https://railway-proxy-server-production-58a1.up.railway.app/';
 
 // Конфигурация PROXY6
 const PROXY6_CONFIG = {
@@ -16,7 +16,7 @@ const PROXY6_CONFIG = {
 
 // Единые настройки покупки прокси (по умолчанию: 20 штук на 7 дней, RU, IPv4 shared)
 const PURCHASE_DEFAULTS = {
-    count: parseInt(process.env.PROXY_BUY_COUNT || '20', 10),
+    count: parseInt(process.env.PROXY_BUY_COUNT || '1', 10),
     period: parseInt(process.env.PROXY_BUY_PERIOD || '7', 10),
     country: process.env.PROXY_BUY_COUNTRY || 'ru',
     version: parseInt(process.env.PROXY_BUY_VERSION || '3', 10)
