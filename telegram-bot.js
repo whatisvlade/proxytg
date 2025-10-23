@@ -131,7 +131,7 @@ async function checkProxy6Balance() {
 }
 
 // Функция для получения цены прокси
-async function getProxy6Price(count = 3, period = 7, version = 3) {
+async function getProxy6Price(count = 1, period = 7, version = 3) {
     try {
         if (!PROXY6_CONFIG.API_KEY) {
             return {
@@ -491,7 +491,7 @@ async function handleAddUserWithPurchase(chatId, userId) {
                 `❌ Недостаточно средств на балансе PROXY6!\n\n` +
                 `💰 Текущий баланс: ${balanceCheck.balance} ${balanceCheck.currency}\n` +
                 `💸 Необходимо: ${priceCheck.price} ${priceCheck.currency}\n` +
-                `📊 Цена за 25 shared прокси на 7 дней`
+                `📊 Цена за 20 shared прокси на 7 дней`
             );
             return;
         }
@@ -507,7 +507,7 @@ async function handleAddUserWithPurchase(chatId, userId) {
             `✅ Готов к покупке прокси!\n\n` +
             `💰 Баланс PROXY6: ${balanceCheck.balance} ${balanceCheck.currency}\n` +
             `💸 Стоимость: ${priceCheck.price} ${priceCheck.currency}\n` +
-            `📦 Количество: 25 shared прокси на 7 дней\n\n` +
+            `📦 Количество: 20 shared прокси на 7 дней\n\n` +
             `👤 Введите логин для нового клиента:`
         );
 
@@ -522,7 +522,7 @@ async function createUserWithProxyPurchase(userData) {
     try {
         // 1. Сначала покупаем прокси
         const purchaseResult = await buyProxy6(
-            25, // количество
+            1, // количество
             7, // период в днях
             'ru', // страна
             3, // IPv4 Shared
@@ -575,7 +575,7 @@ async function createUserWithProxyPurchase(userData) {
 }
 
 // Покупка прокси для существующего клиента (NEW)
-async function buyProxiesForExistingClient({ adminId, clientName, count = 25, period = 7, country = 'ru', version = 3 }) {
+async function buyProxiesForExistingClient({ adminId, clientName, count = 1, period = 7, country = 'ru', version = 3 }) {
     try {
         if (!PROXY6_CONFIG.API_KEY) {
             return { success: false, error: 'API ключ PROXY6 не настроен' };
@@ -767,7 +767,7 @@ bot.on('message', async (msg) => {
 
         let message = `🛍 Покупка прокси для клиента
 
-Отправьте имя клиента, которому нужно купить 25 shared прокси на 7 дней.
+Отправьте имя клиента, которому нужно купить 20 shared прокси на 7 дней.
 
 📋 Доступные клиенты:\n`;
 
@@ -811,7 +811,7 @@ bot.on('message', async (msg) => {
             
             if (priceResult.success) {
                 const canBuy = Math.floor(parseFloat(balanceResult.balance) / priceResult.price);
-                message += `\n📊 Стоимость 25 shared прокси на 7 дней: ${priceResult.price} ${balanceResult.currency}\n` +
+                message += `\n📊 Стоимость 20 shared прокси на 7 дней: ${priceResult.price} ${balanceResult.currency}\n` +
                           `🛒 Можно купить: ${canBuy} таких заказов`;
             }
             
@@ -1144,7 +1144,7 @@ bot.on('message', async (msg) => {
                         `📋 Подтверждение создания клиента:\n\n` +
                         `👤 Логин: ${state.username}\n` +
                         `🔐 Пароль: ${state.password}\n` +
-                        `📦 Прокси: 25 shared на 7 дней\n` +
+                        `📦 Прокси: 20 shared на 7 дней\n` +
                         `💸 Стоимость: будет списана с баланса PROXY6\n\n` +
                         `❓ Подтвердить создание и покупку прокси?`,
                         keyboard
@@ -1198,7 +1198,7 @@ bot.on('message', async (msg) => {
                             `❌ Недостаточно средств на балансе PROXY6!\n\n` +
                             `💰 Текущий баланс: ${balanceCheck.balance} ${balanceCheck.currency}\n` +
                             `💸 Необходимо: ${priceCheck.price} ${priceCheck.currency}\n` +
-                            `📊 Цена за 25 shared прокси на 7 дней`
+                            `📊 Цена за 20 shared прокси на 7 дней`
                         );
                         delete userStates[userId];
                         return;
@@ -1212,7 +1212,7 @@ bot.on('message', async (msg) => {
                         adminId: clientInfo.adminId,
                         price: priceCheck.price,
                         currency: priceCheck.currency,
-                        count: 25,
+                        count: 1,
                         period: 7
                     };
 
@@ -1230,7 +1230,7 @@ bot.on('message', async (msg) => {
                     await bot.sendMessage(chatId,
                         `📋 Подтверждение покупки:\n\n` +
                         `👤 Клиент: ${clientInfo.clientName || clientNameInput}\n` +
-                        `📦 Прокси: 25 shared на 7 дней\n` +
+                        `📦 Прокси: 20 shared на 7 дней\n` +
                         `💸 Стоимость: будет списана с баланса PROXY6\n\n` +
                         `❓ Подтвердить покупку прокси для клиента?`,
                         keyboard
@@ -1561,7 +1561,7 @@ bot.on('callback_query', async (callbackQuery) => {
             const result = await buyProxiesForExistingClient({
                 adminId: st.adminId,
                 clientName: st.clientName,
-                count: 25,
+                count: 1,
                 period: 7,
                 country: 'ru',
                 version: 3
