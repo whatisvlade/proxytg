@@ -16,7 +16,7 @@ const PROXY6_CONFIG = {
 
 // Единые настройки покупки прокси (по умолчанию: 20 штук на 7 дней, RU, IPv4 shared)
 const PURCHASE_DEFAULTS = {
-    count: parseInt(process.env.PROXY_BUY_COUNT || '1', 10), // было '1'
+    count: parseInt(process.env.PROXY_BUY_COUNT || '1', 10), // было '1' -> '20'
     period: parseInt(process.env.PROXY_BUY_PERIOD || '7', 10),
     country: process.env.PROXY_BUY_COUNTRY || 'ru',
     version: parseInt(process.env.PROXY_BUY_VERSION || '3', 10)
@@ -290,6 +290,31 @@ async function makeProxyServerRequest(endpoint, method = 'GET', data = null, aut
     }
 }
 
+// Добавление массива прокси по одному: { clientName, proxy }
+async function addProxiesToServer(clientName, proxies) {
+    let ok = 0, fail = 0, errors = [];
+    for (const proxy of proxies) {
+        try {
+            console.log('🌐 POST /api/add-proxy ->', { clientName, proxy });
+            await makeProxyServerRequest('/api/add-proxy', 'POST', { clientName, proxy });
+            ok++;
+        } catch (e) {
+            // Fallback на старый формат, если вдруг доступен
+            try {
+                console.log('↩️ Fallback POST /api/add-proxy ->', { name: clientName, proxies: [proxy] });
+                await makeProxyServerRequest('/api/add-proxy', 'POST', { name: clientName, proxies: [proxy] });
+                ok++;
+            } catch (e2) {
+                fail++;
+                const msg = e?.response?.data ? JSON.stringify(e.response.data) : e.message;
+                console.error(`❌ add-proxy failed for ${clientName}`, msg);
+                errors.push(msg);
+            }
+        }
+    }
+    return { ok, fail, errors };
+}
+
 async function deleteClientFromServer(clientName) {
     try {
         console.log(`🌐 DELETE ${PROXY_SERVER_URL}/api/delete-client/${clientName}`);
@@ -336,7 +361,7 @@ async function syncAllClientsToServer(adminId = null) {
                     await makeProxyServerRequest('/api/add-client', 'POST', {
                         clientName,
                         password: clientData.password,
-                        proxies: (clientData.proxies || []).map(formatProxyForRailway)
+                        proxies: (clientData.proxies || []).map(formatProxyForRailway).filter(Boolean)
                     });
                     console.log(`✅ Клиент ${clientName} создан/обновлен через add-client`);
                     results.success++;
@@ -345,14 +370,11 @@ async function syncAllClientsToServer(adminId = null) {
                     if (status === 409) {
                         console.log(`ℹ️ Клиент ${clientName} уже существует (409). Актуализирую прокси через add-proxy...`);
                         try {
-                            const proxies = (clientData.proxies || []).map(formatProxyForRailway);
+                            const proxies = (clientData.proxies || []).map(formatProxyForRailway).filter(Boolean);
                             if (proxies.length > 0) {
-                                await makeProxyServerRequest('/api/add-proxy', 'POST', {
-                                    name: clientName,
-                                    proxies
-                                });
+                                const res = await addProxiesToServer(clientName, proxies);
+                                console.log(`✅ Клиент ${clientName} синхронизирован через add-proxy: added=${res.ok}, failed=${res.fail}`);
                             }
-                            console.log(`✅ Клиент ${clientName} синхронизирован через add-proxy`);
                             results.success++;
                         } catch (addProxyErr) {
                             console.error(`❌ Ошибка add-proxy для ${clientName}:`, addProxyErr.message);
@@ -515,10 +537,9 @@ async function buyProxiesForExistingClient({ adminId, clientName, count = PURCHA
         saveClients();
 
         try {
-            await makeProxyServerRequest('/api/add-proxy', 'POST', {
-                name: clientName,
-                proxies: formattedProxies.map(formatProxyForRailway)
-            });
+            const mapped = formattedProxies.map(formatProxyForRailway).filter(Boolean);
+            const res = await addProxiesToServer(clientName, mapped);
+            console.log(`✅ add-proxy: added=${res.ok}, failed=${res.fail}`);
         } catch (err) {
             console.error('❌ Ошибка добавления купленных прокси на сервер:', err.message);
         }
@@ -575,7 +596,7 @@ async function handleConfirmPurchase(chatId, userId) {
                 await makeProxyServerRequest('/api/add-client', 'POST', {
                     clientName: result.username,
                     password: result.user.password,
-                    proxies: result.user.proxies.map(formatProxyForRailway)
+                    proxies: result.user.proxies.map(formatProxyForRailway).filter(Boolean)
                 });
                 console.log(`✅ Клиент ${result.username} успешно добавлен на прокси сервер`);
             } catch (error) {
@@ -985,7 +1006,7 @@ bot.on('message', async (msg) => {
             }
         }
 
-        // Покупка прокси существующему клиенту (добавлен парсинг "name [count] [period]")
+        // Покупка прокси существующему клиенту (поддерживает "name [count] [period]")
         if (state.action === 'buying_proxy') {
             if (state.step === 'waiting_client_name') {
                 const raw = text.trim();
@@ -1136,7 +1157,7 @@ bot.on('message', async (msg) => {
             try {
                 await makeProxyServerRequest('/api/add-client', 'POST', {
                     clientName, password,
-                    proxies: proxies.map(formatProxyForRailway)
+                    proxies: proxies.map(formatProxyForRailway).filter(Boolean)
                 });
                 await bot.sendMessage(
                     chatId,
@@ -1262,10 +1283,10 @@ bot.on('message', async (msg) => {
             saveClients();
 
             try {
-                await makeProxyServerRequest('/api/add-proxy', 'POST', {
-                    name: clientInfo.clientName,
-                    proxies: newProxies.map(formatProxyForRailway)
-                });
+                await addProxiesToServer(
+                    clientInfo.clientName,
+                    newProxies.map(formatProxyForRailway).filter(Boolean)
+                );
             } catch (error) {
                 console.error('❌ Ошибка добавления прокси на сервер:', error);
             }
