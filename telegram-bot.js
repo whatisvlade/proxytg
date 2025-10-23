@@ -16,7 +16,7 @@ const PROXY6_CONFIG = {
 
 // Единые настройки покупки прокси (по умолчанию: 20 штук на 7 дней, RU, IPv4 shared)
 const PURCHASE_DEFAULTS = {
-    count: parseInt(process.env.PROXY_BUY_COUNT || '1', 10),
+    count: parseInt(process.env.PROXY_BUY_COUNT || '1', 10), // было '1'
     period: parseInt(process.env.PROXY_BUY_PERIOD || '7', 10),
     country: process.env.PROXY_BUY_COUNTRY || 'ru',
     version: parseInt(process.env.PROXY_BUY_VERSION || '3', 10)
@@ -322,6 +322,8 @@ async function getMyIP(clientName, password) {
         throw new Error(`Ошибка получения IP: ${error.message}`);
     }
 }
+
+// Обновлено: устойчивость к 409 и досылка прокси
 async function syncAllClientsToServer(adminId = null) {
     const results = { success: 0, failed: 0, errors: [] };
     const toSync = adminId ? { [adminId]: getAdminClients(adminId) } : clients;
@@ -330,13 +332,37 @@ async function syncAllClientsToServer(adminId = null) {
         for (const [clientName, clientData] of Object.entries(adminClients)) {
             try {
                 console.log(`🔄 Синхронизация клиента ${clientName} (Admin: ${aId})`);
-                await makeProxyServerRequest('/api/add-client', 'POST', {
-                    clientName,
-                    password: clientData.password,
-                    proxies: (clientData.proxies || []).map(formatProxyForRailway)
-                });
-                console.log(`✅ Клиент ${clientName} успешно синхронизирован`);
-                results.success++;
+                try {
+                    await makeProxyServerRequest('/api/add-client', 'POST', {
+                        clientName,
+                        password: clientData.password,
+                        proxies: (clientData.proxies || []).map(formatProxyForRailway)
+                    });
+                    console.log(`✅ Клиент ${clientName} создан/обновлен через add-client`);
+                    results.success++;
+                } catch (err) {
+                    const status = err?.response?.status;
+                    if (status === 409) {
+                        console.log(`ℹ️ Клиент ${clientName} уже существует (409). Актуализирую прокси через add-proxy...`);
+                        try {
+                            const proxies = (clientData.proxies || []).map(formatProxyForRailway);
+                            if (proxies.length > 0) {
+                                await makeProxyServerRequest('/api/add-proxy', 'POST', {
+                                    name: clientName,
+                                    proxies
+                                });
+                            }
+                            console.log(`✅ Клиент ${clientName} синхронизирован через add-proxy`);
+                            results.success++;
+                        } catch (addProxyErr) {
+                            console.error(`❌ Ошибка add-proxy для ${clientName}:`, addProxyErr.message);
+                            results.failed++;
+                            results.errors.push(`${clientName}: add-proxy failed: ${addProxyErr.message}`);
+                        }
+                    } else {
+                        throw err;
+                    }
+                }
             } catch (error) {
                 console.error(`❌ Ошибка синхронизации клиента ${clientName}:`, error.message);
                 results.failed++;
@@ -959,16 +985,29 @@ bot.on('message', async (msg) => {
             }
         }
 
-        // Покупка прокси существующему клиенту
+        // Покупка прокси существующему клиенту (добавлен парсинг "name [count] [period]")
         if (state.action === 'buying_proxy') {
             if (state.step === 'waiting_client_name') {
-                const clientNameInput = text.trim();
+                const raw = text.trim();
+                const parts = raw.split(/\s+/);
+                const nameFromInput = parts[0];
+
+                // Опциональные [count] [period]
+                if (parts.length >= 2) {
+                    const requestedCount = parseInt(parts[1], 10);
+                    if (!Number.isNaN(requestedCount) && requestedCount > 0) state.count = requestedCount;
+                }
+                if (parts.length >= 3) {
+                    const requestedPeriod = parseInt(parts[2], 10);
+                    if (!Number.isNaN(requestedPeriod) && requestedPeriod > 0) state.period = requestedPeriod;
+                }
+
                 const clientInfo = superAdmin
-                    ? findClientByName(clientNameInput)
-                    : findClientByName(clientNameInput, userId);
+                    ? findClientByName(nameFromInput)
+                    : findClientByName(nameFromInput, userId);
 
                 if (!clientInfo) {
-                    await bot.sendMessage(chatId, `❌ Клиент ${clientNameInput} не найден или у вас нет к нему доступа`);
+                    await bot.sendMessage(chatId, `❌ Клиент ${nameFromInput} не найден или у вас нет к нему доступа`);
                     delete userStates[userId];
                     return;
                 }
@@ -1009,7 +1048,7 @@ bot.on('message', async (msg) => {
                 userStates[userId] = {
                     action: 'buying_proxy',
                     step: 'confirming_buy',
-                    clientName: clientInfo.clientName || clientNameInput,
+                    clientName: clientInfo.clientName || nameFromInput,
                     adminId: clientInfo.adminId,
                     count: state.count,
                     period: state.period,
@@ -1033,7 +1072,7 @@ bot.on('message', async (msg) => {
                 await bot.sendMessage(
                     chatId,
                     `📋 Подтверждение покупки:\n\n` +
-                    `👤 Клиент: ${clientInfo.clientName || clientNameInput}\n` +
+                    `👤 Клиент: ${clientInfo.clientName || nameFromInput}\n` +
                     `📦 Прокси: ${state.count} shared на ${state.period} дней\n` +
                     `💸 Стоимость: будет списана с баланса PROXY6\n\n` +
                     `❓ Подтвердить покупку прокси для клиента?`,
