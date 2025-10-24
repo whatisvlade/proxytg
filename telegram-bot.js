@@ -39,7 +39,7 @@ const PURCHASE_DEFAULTS = {
     count: parseInt(process.env.PROXY_BUY_COUNT || '20', 10),
     period: parseInt(process.env.PROXY_BUY_PERIOD || '7', 10),
     country: process.env.PROXY_BUY_COUNTRY || 'ru',
-    version: parseInt(process.env.PROXY_BUY_VERSION || '4', 10)
+    version: parseInt(process.env.PROXY_BUY_VERSION || '3', 10)
 };
 
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
@@ -173,7 +173,7 @@ async function getProxy6Price(count = PURCHASE_DEFAULTS.count, period = PURCHASE
 
 // Получение доступного количества прокси (по стране и версии)
 // По задаче: RU + IPv4 Shared (version=3)
-async function getProxy6Count(country = 'ru', version = 4) {
+async function getProxy6Count(country = 'ru', version = 3) {
     try {
         if (!PROXY6_CONFIG.API_KEY) {
             return { success: false, error: 'API ключ PROXY6 не настроен' };
