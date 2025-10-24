@@ -37,7 +37,7 @@ const PROXY6_CONFIG = {
 // Единые настройки покупки прокси (по умолчанию: 20 штук на 7 дней, RU, IPv4 shared)
 const PURCHASE_DEFAULTS = {
     count: parseInt(process.env.PROXY_BUY_COUNT || '20', 10),
-    period: parseInt(process.env.PROXY_BUY_PERIOD || '7', 10),
+    period: parseInt(process.env.PROXY_BUY_PERIOD || '14', 10),
     country: process.env.PROXY_BUY_COUNTRY || 'ru',
     version: parseInt(process.env.PROXY_BUY_VERSION || '3', 10)
 };
