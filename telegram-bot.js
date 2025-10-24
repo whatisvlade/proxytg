@@ -857,7 +857,7 @@ bot.on('message', async (msg) => {
         }
 
         await bot.sendMessage(chatId, '⏳ Проверяю наличие российских IPv4 прокси на PROXY6...');
-        const result = await getProxy6Count('ru', 3); // RU + IPv4 Shared
+        const result = await getProxy6Count('ru', 4); // RU + IPv4 Shared
 
         if (result.success) {
             const perOrder = PURCHASE_DEFAULTS.count || 20;
