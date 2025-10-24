@@ -39,7 +39,7 @@ const PURCHASE_DEFAULTS = {
     count: parseInt(process.env.PROXY_BUY_COUNT || '20', 10),
     period: parseInt(process.env.PROXY_BUY_PERIOD || '7', 10),
     country: process.env.PROXY_BUY_COUNTRY || 'ru',
-    version: parseInt(process.env.PROXY_BUY_VERSION || '3', 10)
+    version: parseInt(process.env.PROXY_BUY_VERSION || '4', 10)
 };
 
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
@@ -113,7 +113,7 @@ const superAdminKeyboard = {
             ],
             [
                 { text: '💰 Проверка баланса' },
-                { text: '📦 Наличие RU shared' }
+                { text: '📦 Наличие Ru' }
             ]
         ],
         resize_keyboard: true,
@@ -173,7 +173,7 @@ async function getProxy6Price(count = PURCHASE_DEFAULTS.count, period = PURCHASE
 
 // Получение доступного количества прокси (по стране и версии)
 // По задаче: RU + IPv4 Shared (version=3)
-async function getProxy6Count(country = 'ru', version = 3) {
+async function getProxy6Count(country = 'ru', version = 4) {
     try {
         if (!PROXY6_CONFIG.API_KEY) {
             return { success: false, error: 'API ключ PROXY6 не настроен' };
@@ -481,7 +481,7 @@ async function handleAddUserWithPurchase(chatId, userId) {
                 `❌ Недостаточно средств на балансе PROXY6!\n\n` +
                 `💰 Текущий баланс: ${balanceCheck.balance} ${balanceCheck.currency}\n` +
                 `💸 Необходимо: ${priceCheck.price} ${priceCheck.currency}\n` +
-                `📊 Цена за ${PURCHASE_DEFAULTS.count} shared прокси на ${PURCHASE_DEFAULTS.period} дней`
+                `📊 Цена за ${PURCHASE_DEFAULTS.count}  прокси на ${PURCHASE_DEFAULTS.period} дней`
             );
             return;
         }
@@ -501,7 +501,7 @@ async function handleAddUserWithPurchase(chatId, userId) {
             `✅ Готов к покупке прокси!\n\n` +
             `💰 Баланс PROXY6: ${balanceCheck.balance} ${balanceCheck.currency}\n` +
             `💸 Стоимость: ${priceCheck.price} ${priceCheck.currency}\n` +
-            `📦 Количество: ${PURCHASE_DEFAULTS.count} shared прокси на ${PURCHASE_DEFAULTS.period} дней\n\n` +
+            `📦 Количество: ${PURCHASE_DEFAULTS.count} прокси на ${PURCHASE_DEFAULTS.period} дней\n\n` +
             `👤 Введите логин для нового клиента:`
         );
 
@@ -734,7 +734,7 @@ bot.on('message', async (msg) => {
 
         let message = `🛍 Покупка прокси для клиента
 
-Отправьте имя клиента, которому нужно купить ${PURCHASE_DEFAULTS.count} shared прокси на ${PURCHASE_DEFAULTS.period} дней.
+Отправьте имя клиента, которому нужно купить ${PURCHASE_DEFAULTS.count}  прокси на ${PURCHASE_DEFAULTS.period} дней.
 
 📋 Доступные клиенты:\n`;
 
@@ -772,7 +772,7 @@ bot.on('message', async (msg) => {
                          `🆔 ID аккаунта: ${balanceResult.user_id}\n`;
             if (priceResult.success) {
                 const canBuy = Math.floor(parseFloat(balanceResult.balance) / priceResult.price);
-                message += `\n📊 Стоимость ${PURCHASE_DEFAULTS.count} shared прокси на ${PURCHASE_DEFAULTS.period} дней: ${priceResult.price} ${balanceResult.currency}\n` +
+                message += `\n📊 Стоимость ${PURCHASE_DEFAULTS.count}  прокси на ${PURCHASE_DEFAULTS.period} дней: ${priceResult.price} ${balanceResult.currency}\n` +
                            `🛒 Можно купить: ${canBuy} таких заказов`;
             }
             await bot.sendMessage(chatId, message);
@@ -783,7 +783,7 @@ bot.on('message', async (msg) => {
     }
 
     // Проверка доступности RU IPv4 Shared (только супер-админ)
-    if (text === '📦 Наличие RU shared' || text === '/proxy6-ru-shared') {
+    if (text === '📦 Наличие RU' || text === '/proxy6-ru-shared') {
         if (!superAdmin) {
             await bot.sendMessage(chatId, '❌ Эта команда доступна только супер-админу');
             return;
@@ -794,7 +794,7 @@ bot.on('message', async (msg) => {
         }
 
         await bot.sendMessage(chatId, '⏳ Проверяю наличие российских IPv4 Shared прокси на PROXY6...');
-        const result = await getProxy6Count('ru', 3); // RU + IPv4 Shared
+        const result = await getProxy6Count('ru', 4); // RU + IPv4 Shared
 
         if (result.success) {
             const perOrder = PURCHASE_DEFAULTS.count || 20;
@@ -802,7 +802,7 @@ bot.on('message', async (msg) => {
             const msgText =
                 `📦 Доступность на PROXY6\n\n` +
                 `🇷🇺 Страна: RU\n` +
-                `🔁 Тип: IPv4 Shared\n` +
+                `🔁 Тип: IPv4\n` +
                 `✅ Доступно к покупке: ${result.count} шт.\n` +
                 (perOrder > 0 ? `🧮 Заказов по ${perOrder} шт: ${batches}\n` : '') +
                 (result.balance ? `\n💳 Баланс: ${result.balance} ${result.currency || 'RUB'}` : '');
@@ -846,7 +846,7 @@ bot.on('message', async (msg) => {
 ✅ Успешно: ${results.success}
 ❌ Ошибок: ${results.failed}`;
     // Проверка доступности RU IPv4 Shared (только супер-админ)
-    if (text === '📦 Наличие RU shared' || text === '/proxy6-ru-shared') {
+    if (text === '📦 Наличие RU' || text === '/proxy6-ru-shared') {
         if (!superAdmin) {
             await bot.sendMessage(chatId, '❌ Эта команда доступна только супер-админу');
             return;
@@ -856,7 +856,7 @@ bot.on('message', async (msg) => {
             return;
         }
 
-        await bot.sendMessage(chatId, '⏳ Проверяю наличие российских IPv4 Shared прокси на PROXY6...');
+        await bot.sendMessage(chatId, '⏳ Проверяю наличие российских IPv4 прокси на PROXY6...');
         const result = await getProxy6Count('ru', 3); // RU + IPv4 Shared
 
         if (result.success) {
@@ -865,7 +865,7 @@ bot.on('message', async (msg) => {
             const msgText =
                 `📦 Доступность на PROXY6\n\n` +
                 `🇷🇺 Страна: RU\n` +
-                `🔁 Тип: IPv4 Shared\n` +
+                `🔁 Тип: IPv4\n` +
                 `✅ Доступно к покупке: ${result.count} шт.\n` +
                 (perOrder > 0 ? `🧮 Заказов по ${perOrder} шт: ${batches}\n` : '') +
                 (result.balance ? `\n💳 Баланс: ${result.balance} ${result.currency || 'RUB'}` : '');
@@ -1050,7 +1050,7 @@ bot.on('message', async (msg) => {
     const buttonCommands = [
         '👤 Добавить клиента', '🛒 Добавить с покупкой', '🗑️ Удалить клиента', '➕ Добавить прокси',
         '📋 Мои клиенты', '📋 Все клиенты', '🌐 Текущий прокси', '🌍 Мой IP',
-        '👥 Управление админами', '📥 Добавить клиента с прокси', '🔄 Синхронизация', '💰 Проверка баланса', '📦 Наличие RU shared',
+        '👥 Управление админами', '📥 Добавить клиента с прокси', '🔄 Синхронизация', '💰 Проверка баланса', '📦 Наличие RU',
         '🛍 Купить прокси клиенту'
     ];
     if (buttonCommands.includes(text)) {
@@ -1109,7 +1109,7 @@ bot.on('message', async (msg) => {
                         `📋 Подтверждение создания клиента:\n\n` +
                         `👤 Логин: ${state.username}\n` +
                         `🔐 Пароль: ${state.password}\n` +
-                        `📦 Прокси: ${state.count} shared на ${state.period} дней\n` +
+                        `📦 Прокси: ${state.count}  на ${state.period} дней\n` +
                         `💸 Стоимость: будет списана с баланса PROXY6\n\n` +
                         `❓ Подтвердить создание и покупку прокси?`,
                         keyboard
@@ -1173,7 +1173,7 @@ bot.on('message', async (msg) => {
                         `❌ Недостаточно средств на балансе PROXY6!\n\n` +
                         `💰 Текущий баланс: ${balanceCheck.balance} ${balanceCheck.currency}\n` +
                         `💸 Необходимо: ${priceCheck.price} ${priceCheck.currency}\n` +
-                        `📊 Цена за ${state.count} shared прокси на ${state.period} дней`
+                        `📊 Цена за ${state.count} прокси на ${state.period} дней`
                     );
                     delete userStates[userId];
                     return;
@@ -1207,7 +1207,7 @@ bot.on('message', async (msg) => {
                     chatId,
                     `📋 Подтверждение покупки:\n\n` +
                     `👤 Клиент: ${clientInfo.clientName || nameFromInput}\n` +
-                    `📦 Прокси: ${state.count} shared на ${state.period} дней\n` +
+                    `📦 Прокси: ${state.count} на ${state.period} дней\n` +
                     `💸 Стоимость: будет списана с баланса PROXY6\n\n` +
                     `❓ Подтвердить покупку прокси для клиента?`,
                     keyboard
